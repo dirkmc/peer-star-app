@@ -12,6 +12,7 @@ const DiasSet = require('../common/dias-peer-set')
 const ConnectionManager = require('./connection-manager')
 const MembershipGossipFrequencyHeuristic = require('./membership-gossip-frequency-henristic')
 const { encode } = require('delta-crdts-msgpack-codec')
+const Leadership = require('../leadership')
 
 module.exports = class Membership extends EventEmitter {
   constructor (ipfs, globalConnectionManager, app, collaboration, store, clocks, options) {
@@ -48,6 +49,8 @@ module.exports = class Membership extends EventEmitter {
       this.emit('changed')
     })
 
+    this.leadership = new Leadership(this, this._membershipGossipFrequencyHeuristic, this._options)
+
     this.running = false
   }
 
@@ -63,8 +66,9 @@ module.exports = class Membership extends EventEmitter {
     this._membershipGossipFrequencyHeuristic.on('gossip now', this._gossipNow)
     this._membershipGossipFrequencyHeuristic.start()
     await this._startPeerInfo()
+    this.leadership.start(this._peerId)
     this.running = true
-    this.emit('started')
+    this.emit('started', this._peerId)
   }
 
   async _startPeerInfo () {
@@ -89,7 +93,9 @@ module.exports = class Membership extends EventEmitter {
     this._membershipGossipFrequencyHeuristic.stop()
     this._membershipGossipFrequencyHeuristic.removeListener('gossip now', this._gossipNow)
     this.connectionManager.stop()
+    this.leadership.stop()
     this.running = false
+    this.emit('stopped')
   }
 
   peerCount () {
@@ -126,13 +132,18 @@ module.exports = class Membership extends EventEmitter {
   }
 
   needsUrgentBroadcast () {
-    return this._someoneHasMembershipWrong
+    // return this._someoneHasMembershipWrong || this.pluginManager.needsUrgentBroadcast()
+    return this._someoneHasMembershipWrong || this.leadership.needsUrgentBroadcast()
   }
 
   // The parameter is either the remote membership state or a hash of the
   // remote membership state
-  async deliverRemoteMembership (membership) {
+  async deliverGossipMessage (message) {
     await this.waitForStart()
+
+    const membership = message[1]
+    const leadershipMsg = message[3]
+    this.leadership.deliverGossipMessage(this._memberCRDT.state(), message, leadershipMsg)
 
     let remoteHash = membership
     if (typeof membership !== 'string') {
@@ -196,7 +207,10 @@ module.exports = class Membership extends EventEmitter {
       this._membershipTopic(),
       this._createMembershipSummaryHash(),
       this._collaboration.typeName]
-    return encode(message)
+    // const pluginGossip = this.pluginManager.getGossipMessage(false)
+    // return encode(message.concat(pluginGossip))
+    const leadershipGossip = this.leadership.getGossipMessage(false)
+    return encode(message.concat(leadershipGossip))
   }
 
   _createMembershipSummaryHash () {
@@ -214,8 +228,11 @@ module.exports = class Membership extends EventEmitter {
   _createMembershipMessage () {
     debug('sending membership', this._memberCRDT.value())
     const message = [this._membershipTopic(), this._memberCRDT.state(), this._collaboration.typeName]
+    // const pluginGossip = this.pluginManager.getGossipMessage(true)
+    // return encode(message.concat(pluginGossip))
+    const leadershipGossip = this.leadership.getGossipMessage(true)
     // TODO: sign and encrypt membership message
-    return encode(message)
+    return encode(message.concat(leadershipGossip))
   }
 
   _joinMembership (remoteMembership) {

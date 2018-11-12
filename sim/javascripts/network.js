@@ -23,7 +23,7 @@ class Network extends EventEmitter {
       this.messages.set(id, { id, message, from, to, duration, start: Date.now() })
       this.emit('gossip send', id, message, from, to, duration)
       setTimeout(() => {
-        to.membership.deliverRemoteMembership(message[1])
+        to.membership.deliverGossipMessage(message)
         this.messages.delete(id)
         this.emit('gossip arrive', id, message, from, to, duration)
       }, duration)
@@ -92,8 +92,8 @@ class Network extends EventEmitter {
         }))
       },
       getLeader() {
-        // return this.membership._leadership._leader
-        return (this.membership._leadership || {})._leader
+        const leadership = this.membership.leadership
+        return leadership && leadership.getLeader()
       },
       shutdown() {
         this.membership.stop()
@@ -119,10 +119,11 @@ class Network extends EventEmitter {
 
     setTimeout(async () => {
       await peer.membership.start()
-      // peer.membership._leadership.on('leader', () => {
-      //   this.emit('peer chose leader', peer)
-      //   this.checkLeaderElected()
-      // })
+      const leadership = peer.membership.leadership
+      leadership && leadership.on('leader', () => {
+        this.emit('peer chose leader', peer)
+        this.checkLeaderElected()
+      })
       peer.membership.on('changed', () => this.checkMembershipConverged())
       peer.running = true
       peer.log('started')
@@ -135,7 +136,7 @@ class Network extends EventEmitter {
     p.shutdown()
     this.peers = this.peers.filter(i => i !== p)
     this.emit('peer removed', p)
-    // this.checkLeaderRemoved(p)
+    this.checkLeaderRemoved(p)
   }
 
   checkMembershipConverged() {
@@ -168,7 +169,9 @@ class Network extends EventEmitter {
       if (p.getLeader() !== leader) return
     }
     this.leader = this.peers.find(p => p.b58 === leader)
-    this.emit('leader elected', this.leader)
+    if (leader) {
+      this.emit('leader elected', this.leader)
+    }
   }
 }
 

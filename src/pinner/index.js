@@ -82,9 +82,10 @@ class AppPinner extends EventEmitter {
     if (message.from === peerInfo.id) {
       return
     }
-    let collaborationName, membership, type
+    let decoded, collaborationName, membership, type
     try {
-      [collaborationName, membership, type] = decode(message.data)
+      decoded = decode(message.data)
+      [collaborationName, membership, type] = decoded
     } catch (err) {
       console.log('error parsing gossip message:', err)
       return
@@ -100,7 +101,7 @@ class AppPinner extends EventEmitter {
         await collaboration.start()
       }
     }
-    collaboration.deliverRemoteMembership(membership).catch((err) => {
+    collaboration.deliverGossipMessage(decoded).catch((err) => {
       console.error('error delivering remote membership:', err)
     })
   }

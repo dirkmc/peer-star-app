@@ -10,6 +10,7 @@ const Gossip = require('./gossip')
 const Clocks = require('./clocks')
 const deriveCreateCipherFromKeys = require('../keys/derive-cipher-from-keys')
 const Stats = require('../stats')
+const LeadershipPersister = require('../leadership/persister')
 
 const defaultOptions = {
   preambleByteCount: 2,
@@ -75,6 +76,8 @@ class Collaboration extends EventEmitter {
       this._membership,
       globalConnectionManager,
       this._options.stats)
+
+    this._leadershipPersister = new LeadershipPersister(this, this._membership, ipfs, name, this._type, this._store, options)
   }
 
   async start () {
@@ -163,6 +166,7 @@ class Collaboration extends EventEmitter {
     this._unregisterObserver = this._membership.connectionManager.observe(this.stats.observer)
 
     await Array.from(this._subs.values()).map((sub) => sub.start())
+    this.emit('started', id)
   }
 
   async stop () {
@@ -224,8 +228,8 @@ class Collaboration extends EventEmitter {
     return this._membership.inboundConnectedPeers()
   }
 
-  deliverRemoteMembership (membership) {
-    return this._membership.deliverRemoteMembership(membership)
+  deliverGossipMessage (message) {
+    return this._membership.deliverGossipMessage(message)
   }
 
   _storeName () {
