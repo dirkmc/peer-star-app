@@ -119,11 +119,11 @@ class App extends EventEmitter {
         return
       }
       try {
-        const message = decode(message.data)
-        const collaborationName = message[0]
+        const decoded = decode(message.data)
+        const collaborationName = decoded[0]
         if (this._collaborations.has(collaborationName)) {
           const collaboration = this._collaborations.get(collaborationName)
-          collaboration.deliverGossipMessage(message)
+          collaboration.deliverGossipMessage(decoded)
             .catch((err) => {
               console.error('error delivering remote membership:', err)
             })

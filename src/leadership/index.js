@@ -21,7 +21,7 @@ const LeadershipState = {
 const defaultOptions = {
   // After this many 'gossip now' events without a response, this peer will
   // assume it is the leader
-  leadershipElectionGossipNowMaxCount: 3
+  leadershipElectionGossipNowMaxCount: 20
 }
 
 module.exports = class Leadership extends EventEmitter {
@@ -54,11 +54,13 @@ module.exports = class Leadership extends EventEmitter {
     this._membership.on('peer left', this._onPeerLeft)
     this._epochVoters = EpochVoters(this._peerId)
     this._waitForVotesThenVoteForSelf()
+    this.dbg('started')
   }
 
   stop () {
     this._gossipFrequencyHeuristic.removeListener('gossip now', this._gossipNow)
     this._membership.removeListener('peer left', this._onPeerLeft)
+    this.dbg('stopped')
   }
 
   // Indicates whether this peer wants to gossip out information to other peers

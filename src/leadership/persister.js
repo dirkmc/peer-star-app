@@ -48,7 +48,7 @@ module.exports = class LeadershipPersister extends EventEmitter {
   async onDeposed () {
     debug('deposed from leadership, stopping persister')
     this._epoch++
-    await this._persister.stop()
+    await (this._persister && this._persister.stop())
     this.emit('stopped')
   }
 
