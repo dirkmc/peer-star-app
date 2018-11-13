@@ -17,6 +17,8 @@ function firstSubsumesSecond (firstState, secondState) {
 }
 
 function eqMembership (obj1, obj2) {
+  // Note: We only care about the peer ids in each membership, we don't care
+  // about the peer addresses being different
   return eqSet(new Set(Object.keys(obj1)), new Set(Object.keys(obj2)))
 }
 
