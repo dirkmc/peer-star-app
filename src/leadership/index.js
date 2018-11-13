@@ -8,6 +8,7 @@ const EpochVoters = CRDT('epochvoters')
 const Voting = require('./voting')
 const membershipUtil = require('../common/membership-util')
 const TickTimer = require('../common/tick-timer')
+const Options = require('../common/options')
 
 const LeadershipState = {
   // We just started up and don't yet know who the leader is
@@ -30,7 +31,7 @@ module.exports = class Leadership extends EventEmitter {
 
     this._membership = membership
     this._gossipFrequencyHeuristic = gossipFrequencyHeuristic
-    this._options = Object.assign({}, defaultOptions, options)
+    this._options = Options.merge(defaultOptions, options)
 
     this._leader = undefined
     this._leadershipState = LeadershipState.Discovery

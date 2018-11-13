@@ -5,6 +5,7 @@ const DiasSet = require('../../src/common/dias-peer-set')
 const Membership = require('../../src/collaboration/membership')
 const { decode } = require('delta-crdts-msgpack-codec')
 const Color = require('./color')
+const Options = require('../../src/common/options')
 
 class Network extends EventEmitter {
   constructor(options) {
@@ -79,7 +80,7 @@ class Network extends EventEmitter {
       peerInfo,
       b58: peerInfo.id.toB58String(),
       diasSet: DiasSet(this.options.peerIdByteCount, peerInfo, this.options.preambleByteCount),
-      membership: new Membership(ipfsMock, null, appMock, collaborationMock, null, null, Object.assign({}, this.options, {
+      membership: new Membership(ipfsMock, null, appMock, collaborationMock, null, null, Options.merge(this.options, {
         connectionManager: connectionManagerMock
       })),
       getMemberPeers() {

@@ -10,7 +10,8 @@ const OptionDefaults = {
   // These are specific to the simulator
   avgNetworkDelay: 400,
   avgPeerStartTime: 500,
-  initialPeerCount: 1
+  initialPeerCount: 1,
+  leadershipElectionGossipNowMaxCount: 3
 }
 // Not configurable
 const options = {

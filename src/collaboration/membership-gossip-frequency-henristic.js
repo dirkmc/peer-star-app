@@ -1,6 +1,7 @@
 'use strict'
 
 const EventEmitter = require('events')
+const Options = require('../common/options')
 
 const defaultOptions = {
   samplingIntervalMS: 1000,
@@ -14,7 +15,7 @@ module.exports = class MembershipGossipFrequencyHeuristic extends EventEmitter {
 
     this._app = app
     this._membership = membership
-    this._options = Object.assign({}, defaultOptions, options)
+    this._options = Options.merge(defaultOptions, options)
     this._totalAppPeerCountGuess = 0
     this._totalCollaborationPeerCount = 0
     this._lastBroadcast = 0

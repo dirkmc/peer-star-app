@@ -1,3 +1,5 @@
+'use strict'
+
 class TickTimer {
   constructor () {
     this._tickTimers = new Map()
