@@ -4,8 +4,10 @@ const debug = require('debug')('peer-star:leadership:persistence')
 const EventEmitter = require('events')
 const Persister = require('../persister')
 
-module.exports = class LeadershipPersister {
+module.exports = class LeadershipPersister extends EventEmitter {
   constructor (collaboration, membership, ipfs, name, type, store, options) {
+    super()
+
     this._collaboration = collaboration
     this._membership = membership
     this._ipfs = ipfs
@@ -40,11 +42,18 @@ module.exports = class LeadershipPersister {
     debug('starting persister')
     await this._persister.start()
     debug('persister started')
+    this.emit('started')
   }
 
-  onDeposed () {
+  async onDeposed () {
     debug('deposed from leadership, stopping persister')
     this._epoch++
-    return this._persister.stop()
+    await this._persister.stop()
+    this.emit('stopped')
+  }
+
+  async stop() {
+    await this._persister.stop()
+    this.emit('stopped')
   }
 }
