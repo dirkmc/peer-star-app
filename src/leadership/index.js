@@ -251,20 +251,28 @@ class Leadership extends EventEmitter {
   }
 
   _setStateVoting() {
-    if (this._leader === this._peerId) {
-      this.emit('lost leadership', this._peerId)
-    }
+    const selfWasLeader = this._leader === this._peerId
+
     this._leader = null
     this._leadershipState = LeadershipState.Voting
+
+    if (selfWasLeader) {
+      this.emit('lost leadership', this._peerId)
+    }
   }
 
   _setLeader (peerId) {
     this._backoffMaxTicks = 1
     this._tickTimer.clearTimers()
     if (this._leader !== peerId || this._leadershipState !== LeadershipState.Known) {
+      const selfWasLeader = this._leader === this._peerId
+
       this._leadershipState = LeadershipState.Known
       this._leader = peerId
 
+      if (selfWasLeader) {
+        this.emit('lost leadership', this._peerId)
+      }
       this.emit('leader', this._leader)
       if (this._leader === this._peerId) {
         this.dbg('self elected leader:', this._peerId)
