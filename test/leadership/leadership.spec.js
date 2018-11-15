@@ -126,13 +126,34 @@ describe('leadership', function () {
 
   after(() => leaderships.forEach(l => l.stop()))
 
+  describe('Bad message handling', function () {
+    it('Should ignore bad messages', async () => {
+      const { leadership, localMembership } = await getStartedLeadershipWithSelfAsLeader()
+
+      let succeeded = true
+      try {
+        // no params
+        leadership.deliverGossipMessage()
+        // undefined params
+        leadership.deliverGossipMessage(undefined, undefined, undefined)
+        // undefined message array elements
+        leadership.deliverGossipMessage(undefined, [undefined, undefined], undefined)
+        // undefined leader
+        leadership.deliverGossipMessage(localMembership.state(), '', { leader: undefined })
+        // undefined epochVoters
+        leadership.deliverGossipMessage(localMembership.state(), '', { epochVoters: undefined })
+      } catch (e) {
+        succeeded = false
+      }
+      expect(succeeded).to.equal(true)
+    })
+  })
+
   describe('Discovery state', function () {
     it('before starting should be in Discovery state', async () => {
       const leadership = createLeadership()
       expectDiscoveryState(leadership)
     })
-
-    // TODO: Ignore gossip messages before starting?
 
     it('after starting should still be in Discovery state', async () => {
       const leadership = createLeadership()

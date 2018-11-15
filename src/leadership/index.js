@@ -105,8 +105,13 @@ class Leadership extends EventEmitter {
   }
 
   deliverGossipMessage (localMembership, message, leadershipMsg = {}) {
-    const remoteMembership = message[1]
+    const remoteMembership = (message || [])[1]
     const remoteLeader = leadershipMsg.leader
+    if (!localMembership || !message || (remoteLeader && !remoteMembership)) {
+      this.dbg('ignoring badly formatted message')
+      return
+    }
+
     const remoteEpochVotersState = leadershipMsg.epochVoters
     this.dbg('got gossip message', message, leadershipMsg)
 
