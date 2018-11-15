@@ -71,6 +71,7 @@ class Leadership extends EventEmitter {
     }
     this._gossipFrequencyHeuristic.removeListener('gossip now', this._gossipNow)
     this._membership.removeListener('peer left', this._onPeerLeft)
+    this._tickTimer.clearTimers()
     this._running = false
     this.dbg('stopped')
   }
@@ -119,6 +120,7 @@ class Leadership extends EventEmitter {
     if (this._leadershipState === LeadershipState.Known && !remoteLeader && remoteEpochVotersState) {
       // If we have finished voting but someone else hasn't, make sure we
       // broadcast the voting information in our next gossip message
+      this.dbg(`local knows leader but remote does not, make sure we send voting state on next tick`)
       this._someoneNeedsToKnowVotes = true
     }
 
@@ -252,19 +254,18 @@ class Leadership extends EventEmitter {
   }
 
   _setLeader (peerId) {
-    // Minimize gossip messages - if we were able to find out who the leader
-    // is, everyone else should soon find out too. If not they will request
-    // a gossip message
-    this._someoneNeedsToKnowVotes = false
-
     this._backoffMaxTicks = 1
     this._tickTimer.clearTimers()
     if (this._leader !== peerId || this._leadershipState !== LeadershipState.Known) {
       this._leadershipState = LeadershipState.Known
       this._leader = peerId
+
       this.emit('leader', this._leader)
       if (this._leader === this._peerId) {
+        this.dbg('self elected leader:', this._peerId)
         this.emit('won leadership', this._peerId)
+      } else {
+        this.dbg('new leader elected:', this._peerId)
       }
     }
   }
@@ -316,6 +317,11 @@ class Leadership extends EventEmitter {
       this.dbg(`voting got stuck, voting in new epoch`)
       this._voteNewEpoch()
     }
+  }
+
+  // Only used by tests
+  _getEpochNumber() {
+    return this._epochVoters.value()[0]
   }
 }
 

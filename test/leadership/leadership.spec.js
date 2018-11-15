@@ -26,7 +26,7 @@ const mock = {
   }
 }
 
-function generateGossipMessage(voteForPeerId) {
+function generateGossipMessage (voteForPeerId) {
   const peerId = randomB58String()
   const membership = ORMap(peerId)
   membership.applySub(peerId, 'mvreg', 'write', [])
@@ -41,45 +41,45 @@ function generateGossipMessage(voteForPeerId) {
   }
 }
 
-function mergeEpochVoters(epochVoters1, epochVoters2) {
+function mergeEpochVoters (epochVoters1, epochVoters2) {
   const mergedEpochVoters = EpochVoters('tmp')
   mergedEpochVoters.apply(epochVoters1.state())
   mergedEpochVoters.apply(epochVoters2.state())
   return mergedEpochVoters
 }
 
-function expectDiscoveryState(leadership) {
+function expectDiscoveryState (leadership) {
   expect(leadership.getLeader()).to.equal(undefined)
   expect(leadership.getState()).to.equal(LeadershipState.Discovery)
   expect(leadership.needsUrgentBroadcast()).to.equal(false)
   expect(leadership.getGossipMessage(false)).to.deep.equal({ leader: null })
-  expect(leadership.getGossipMessage(true)).to.deep.equal({ leader: null })  
+  expect(leadership.getGossipMessage(true)).to.deep.equal({ leader: null })
 }
 
-function expectVotingState(leadership, epochVotersState) {
+function expectVotingState (leadership, epochVotersState) {
   expect(leadership.getLeader()).to.equal(null)
   expect(leadership.getState()).to.equal(LeadershipState.Voting)
   expect(leadership.needsUrgentBroadcast()).to.equal(true)
   expect(leadership.getGossipMessage(false)).to.deep.equal({ leader: null })
 
-// console.log('=====')
-// console.log(leadership.getGossipMessage(true).epochVoters)
-// console.log('-----')
-// console.log(epochVotersState)
-// console.log('=====')
+  // console.log('=====')
+  // console.log(leadership.getGossipMessage(true).epochVoters)
+  // console.log('-----')
+  // console.log(epochVotersState)
+  // console.log('=====')
 
   expect(leadership.getGossipMessage(true)).to.deep.equal({ leader: null, epochVoters: epochVotersState })
 }
 
-function expectVotingStateNewEpoch(leadership, remoteEpochVoters) {
+function expectVotingStateNewEpochNumber (leadership, newEpochNumber) {
   const newState = [
-    remoteEpochVoters.value()[0] + 1,
+    newEpochNumber,
     new Map([[leadership._peerId, leadership._peerId]])
   ]
   expectVotingState(leadership, newState)
 }
 
-function expectKnownState(leadership, peerId) {
+function expectKnownState (leadership, peerId) {
   expect(leadership.getLeader()).to.equal(peerId)
   expect(leadership.getState()).to.equal(LeadershipState.Known)
   expect(leadership.needsUrgentBroadcast()).to.equal(false)
@@ -100,7 +100,7 @@ describe('leadership', function () {
     return leadership
   }
 
-  async function getStartedLeadershipWithSelfAsLeader() {
+  async function getStartedLeadershipWithSelfAsLeader () {
     const gfh = mock.gossipFrequencyHeuristic()
     const leadership = createLeadership({
       leadershipElectionGossipNowMaxCount: 1
@@ -202,21 +202,21 @@ describe('leadership', function () {
     })
 
     it('From Known state should not change state if gossip summary message arrives with different leader but no votes', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      const { peerId, leadership, localMembership } = await getStartedLeadershipWithSelfAsLeader()
       const remotePeerId = randomB58String()
       leadership.deliverGossipMessage(localMembership.state(), 'membership hash', { leader: remotePeerId })
       expectKnownState(leadership, peerId)
     })
 
     it('From Known state should not change state if full gossip message arrives with different leader but no votes', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      const { peerId, leadership, localMembership } = await getStartedLeadershipWithSelfAsLeader()
       const remote = generateGossipMessage()
       leadership.deliverGossipMessage(localMembership.state(), remote.message, { leader: remote.peerId })
       expectKnownState(leadership, peerId)
     })
 
     it('From Known state should not change to voting state if gossip message arrives with votes for self', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      const { peerId, leadership, localMembership } = await getStartedLeadershipWithSelfAsLeader()
       const remote = generateGossipMessage(peerId)
       leadership.deliverGossipMessage(localMembership.state(), remote.message, {
         leader: peerId,
@@ -226,7 +226,7 @@ describe('leadership', function () {
     })
 
     it('From Known state should move to Voting if full gossip message arrives with votes for different leader', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      const { leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
 
       const remote = generateGossipMessage()
       leadership.deliverGossipMessage(localMembership.state(), remote.message, {
@@ -237,22 +237,76 @@ describe('leadership', function () {
       const mergedEpochVoters = mergeEpochVoters(epochVoters, remote.epochVoters)
       expectVotingState(leadership, mergedEpochVoters.state())
     })
+
+    it('From Known state should emit voting information if gossip message arrives indicating someone doesnt have full voting information', async () => {
+      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+
+      // Remote votes for local peer
+      const remote = generateGossipMessage(peerId)
+      leadership.deliverGossipMessage(localMembership.state(), remote.message, {
+        leader: null, // Leader null means remote hasn't chosen leader yet
+        epochVoters: remote.epochVoters.state()
+      })
+
+      // Local peer should be in known state
+      expect(leadership.getLeader()).to.equal(peerId)
+      expect(leadership.getState()).to.equal(LeadershipState.Known)
+
+      // But it should emit a gossip message with voter state on next tick
+      // anyway, because it knows there is a peer that does not have full state
+      const mergedEpochVoters = mergeEpochVoters(epochVoters, remote.epochVoters)
+      expect(leadership.needsUrgentBroadcast()).to.equal(true)
+      expect(leadership.getGossipMessage(true)).to.deep.equal({
+        leader: peerId,
+        epochVoters: mergedEpochVoters.state()
+      })
+    })
   })
 
-  // TODO: Run tests from both Known and Voting states
   describe('Moving to new epoch', function () {
-    // If membership changes happened while voting is in progress
+    // If there are remote membership changes the local node didn't know
+    // about, and there's no remote vote CRDT, that means a membership change
+    // happened while voting was in progress, so move to a new voting epoch
+    it('Should move to new epoch on message having membership changes but no voting information', async () => {
+      // Leadership is in Discovery state
+      const leadership = createLeadership()
+      const peerId = randomB58String()
+      const localMembership = ORMap(peerId)
+      localMembership.applySub(peerId, 'mvreg', 'write', [])
+      leadership.start(peerId)
+      expect(leadership._getEpochNumber()).to.equal(1)
+
+      // Send new membership information (remote.message contains new remote peer),
+      // don't send voting information
+      const remote = generateGossipMessage()
+      leadership.deliverGossipMessage(localMembership.state(), remote.message)
+
+      // Expect to move to a new epoch with a vote for self
+      expectVotingStateNewEpochNumber(leadership, 2)
+
+      // Leadership is now in Voting state - test same scenario from Voting state
+
+      // Send new membership information (remote2.message contains new remote peer),
+      // don't send voting information
+      const remote2 = generateGossipMessage()
+      leadership.deliverGossipMessage(localMembership.state(), remote2.message)
+
+      // Expect to move to a new epoch with a vote for self
+      expectVotingStateNewEpochNumber(leadership, 3)
+    })
 
     // If the local node has membership changes the remote doesn't have, but
     // the local node's epoch number is lower, something is out of sync so
     // move to a new voting epoch
     it('Should move to new epoch on message having remote with higher epoch but missing membership changes', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      // Leadership is in Known state
+      const { leadership, localMembership } = await getStartedLeadershipWithSelfAsLeader()
 
       const remote = generateGossipMessage()
 
       // Move ahead of the local epoch
       remote.epochVoters.voteNewEpoch(remote.peerId)
+      expect(leadership._getEpochNumber()).to.equal(1)
       expect((remote.epochVoters.value())[0]).to.equal(2)
 
       leadership.deliverGossipMessage(localMembership.state(), remote.message, {
@@ -261,13 +315,33 @@ describe('leadership', function () {
       })
 
       // Expect to move to a new epoch with a vote for self
-      expectVotingStateNewEpoch(leadership, remote.epochVoters)
+      expectVotingStateNewEpochNumber(leadership, 3)
+
+      // Leadership is now in Voting state - test same scenario from Voting state
+
+      // Move ahead of the local epoch
+      const remote2 = generateGossipMessage()
+      remote2.epochVoters.voteNewEpoch(remote2.peerId)
+      remote2.epochVoters.voteNewEpoch(remote2.peerId)
+      remote2.epochVoters.voteNewEpoch(remote2.peerId)
+      expect(leadership._getEpochNumber()).to.equal(3)
+      expect((remote2.epochVoters.value())[0]).to.equal(4)
+
+      leadership.deliverGossipMessage(localMembership.state(), remote2.message, {
+        leader: remote2.peerId,
+        epochVoters: remote2.epochVoters.state()
+      })
+
+      // Expect to move to a new epoch with a vote for self
+      expectVotingStateNewEpochNumber(leadership, 5)
     })
 
     // If the remote peer knows about this peer, but didn't realize the local
     // peer was leader, move to a new voting epoch
     it('Should move to new epoch on message having remote with higher epoch that doesnt know local is leader', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      // Leadership is in Known state
+      const { peerId, leadership, localMembership } = await getStartedLeadershipWithSelfAsLeader()
+      expect(leadership._getEpochNumber()).to.equal(1)
 
       const remotePeerId = randomB58String()
 
@@ -289,12 +363,12 @@ describe('leadership', function () {
       })
 
       // Expect to move to a new epoch with a vote for self
-      expectVotingStateNewEpoch(leadership, remoteEpochVoters)
+      expectVotingStateNewEpochNumber(leadership, 3)
     })
   })
 
   describe('Voting', function () {
-    function peer() {
+    function peer () {
       const pid = randomB58String()
       const epochVoters = EpochVoters(pid)
       const membership = ORMap(pid)
@@ -303,7 +377,7 @@ describe('leadership', function () {
     }
 
     it('Should elect leader with majority of votes', async () => {
-      const { peerId, leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
+      const { leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
 
       // Two votes for peer 1, one for local peer
       const p1 = peer()
@@ -315,12 +389,23 @@ describe('leadership', function () {
 
       const message = ['collab', p2.membership.state(), 'rga']
       leadership.deliverGossipMessage(localMembership.state(), message, {
-        leader: null,
+        leader: null, // Leader null means remote hasn't chosen leader yet
         epochVoters: p2.epochVoters.state()
       })
 
       // Expect peer 1 to be voted leader
-      expectKnownState(leadership, p1.peerId)
+      expect(leadership.getLeader()).to.equal(p1.peerId)
+      expect(leadership.getState()).to.equal(LeadershipState.Known)
+
+      // But local peer should emit a gossip message with voter state on next
+      // tick, because it knows there is a peer that does not have full state
+      let mergedEpochVoters = mergeEpochVoters(epochVoters, p2.epochVoters)
+      expect(leadership.needsUrgentBroadcast()).to.equal(true)
+      expect(leadership.getGossipMessage(false)).to.deep.equal({ leader: p1.peerId })
+      expect(leadership.getGossipMessage(true)).to.deep.equal({
+        leader: p1.peerId,
+        epochVoters: mergedEpochVoters.state()
+      })
     })
 
     it('If there is a tie, should wait for votes then elect self repeating with exponential back off', async () => {
@@ -362,10 +447,9 @@ describe('leadership', function () {
       await new Promise(resolve => setTimeout(resolve))
 
       // Expect to have moved to a new epoch with a vote for self
-      expectVotingStateNewEpoch(leadership, mergedEpochVoters)
+      expectVotingStateNewEpochNumber(leadership, mergedEpochVoters.value()[0] + 1)
 
-
-      async function voteInNewEpoch(maxTickCount) {
+      async function voteInNewEpoch (maxTickCount) {
         // Remote peer moves to new epoch and votes for itself again
         // In the new epoch: one vote for remote peer, one for local peer
         remotePeer.epochVoters.voteNewEpoch(remotePeer.peerId)
@@ -388,7 +472,7 @@ describe('leadership', function () {
         await new Promise(resolve => setTimeout(resolve))
 
         // Expect to have moved to a new epoch with a vote for self
-        expectVotingStateNewEpoch(leadership, mergedEpochVoters)
+        expectVotingStateNewEpochNumber(leadership, mergedEpochVoters.value()[0] + 1)
       }
 
       // Exponential backoff
@@ -473,7 +557,7 @@ describe('leadership', function () {
       }
 
       // Expect to have moved to a new epoch with a vote for self
-      expectVotingStateNewEpoch(leadership, mergedEpochVoters)
+      expectVotingStateNewEpochNumber(leadership, mergedEpochVoters.value()[0] + 1)
     })
   })
 })
