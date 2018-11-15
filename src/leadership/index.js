@@ -270,7 +270,7 @@ class Leadership extends EventEmitter {
         this.dbg('self elected leader:', this._peerId)
         this.emit('won leadership', this._peerId)
       } else {
-        this.dbg('new leader elected:', this._peerId)
+        this.dbg('new leader elected:', this._leader)
       }
     }
   }

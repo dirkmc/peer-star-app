@@ -400,6 +400,9 @@ describe('leadership', function () {
     it('Should elect leader with majority of votes', async () => {
       const { leadership, localMembership, epochVoters } = await getStartedLeadershipWithSelfAsLeader()
 
+      const leaderEvents = []
+      leadership.on('leader', id => leaderEvents.push(id))
+
       // Two votes for peer 1, one for local peer
       const p1 = peer()
       p1.epochVoters.vote(p1.peerId)
@@ -417,6 +420,7 @@ describe('leadership', function () {
       // Expect peer 1 to be voted leader
       expect(leadership.getLeader()).to.equal(p1.peerId)
       expect(leadership.getState()).to.equal(LeadershipState.Known)
+      expect(leaderEvents).to.deep.equal([p1.peerId])
 
       // But local peer should emit a gossip message with voter state on next
       // tick, because it knows there is a peer that does not have full state
@@ -427,6 +431,13 @@ describe('leadership', function () {
         leader: p1.peerId,
         epochVoters: mergedEpochVoters.state()
       })
+
+      // When this peer detects the leader has been evicted, it should move to
+      // a new epoch
+      expect(leadership._getEpochNumber()).to.equal(1)
+      leadership._membership.emit('peer left', p1.peerId)
+      await new Promise(resolve => setTimeout(resolve))
+      expectVotingStateNewEpochNumber(leadership, 2)
     })
 
     it('If there is a tie, should wait for votes then elect self repeating with exponential back off', async () => {
@@ -516,6 +527,11 @@ describe('leadership', function () {
       remotePeer.epochVoters.apply(localGossip.epochVoters)
       remotePeer.epochVoters.vote(peerId)
 
+      const leaderEvents = []
+      leadership.on('leader', id => leaderEvents.push(id))
+      const wonLeadershipEvents = []
+      leadership.on('won leadership', id => wonLeadershipEvents.push(id))
+
       // Now the local peer gets a message from the remote peer
       message = ['collab', remotePeer.membership.state(), 'rga']
       leadership.deliverGossipMessage(localMembership.state(), message, {
@@ -525,6 +541,8 @@ describe('leadership', function () {
 
       // Expect that the local peer is now leader
       expectKnownState(leadership, peerId)
+      expect(leaderEvents).to.deep.equal([peerId])
+      expect(wonLeadershipEvents).to.deep.equal([peerId])
     })
 
     it('If there are not enough votes, should wait for votes then elect self', async () => {
