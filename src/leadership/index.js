@@ -25,7 +25,7 @@ const defaultOptions = {
   leadershipElectionGossipNowMaxCount: 20
 }
 
-module.exports = class Leadership extends EventEmitter {
+class Leadership extends EventEmitter {
   constructor (membership, gossipFrequencyHeuristic, options) {
     super()
 
@@ -34,6 +34,7 @@ module.exports = class Leadership extends EventEmitter {
     this._options = Options.merge(defaultOptions, options)
 
     this._leader = undefined
+    this._someoneNeedsToKnowVotes = false
     this._leadershipState = LeadershipState.Discovery
 
     this._backoffMaxTicks = 1
@@ -42,6 +43,7 @@ module.exports = class Leadership extends EventEmitter {
     this._gossipNow = this._gossipNow.bind(this)
     this._onPeerLeft = this._onPeerLeft.bind(this)
 
+    this._running = false
     this.dbg = (...args) => debug('%s:', this._peerId, ...args)
   }
 
@@ -49,18 +51,27 @@ module.exports = class Leadership extends EventEmitter {
     return this._leader
   }
 
-  async start (peerId) {
+  getState () {
+    return this._leadershipState
+  }
+
+  start (peerId) {
     this._peerId = peerId    
     this._gossipFrequencyHeuristic.on('gossip now', this._gossipNow)
     this._membership.on('peer left', this._onPeerLeft)
     this._epochVoters = EpochVoters(this._peerId)
     this._waitForVotesThenVoteForSelf()
+    this._running = true
     this.dbg('started')
   }
 
   stop () {
+    if (!this._running) {
+      return
+    }
     this._gossipFrequencyHeuristic.removeListener('gossip now', this._gossipNow)
     this._membership.removeListener('peer left', this._onPeerLeft)
+    this._running = false
     this.dbg('stopped')
   }
 
@@ -96,43 +107,31 @@ module.exports = class Leadership extends EventEmitter {
     const remoteMembership = message[1]
     const remoteLeader = leadershipMsg.leader
     const remoteEpochVotersState = leadershipMsg.epochVoters
-    this.dbg('got gossip message', message)
+    this.dbg('got gossip message', message, leadershipMsg)
 
-    // Both summary messages and full messaages may include the remote leader
-    // (if the peer sending the message is in the Known state)
-    if (remoteLeader) {
-      // We agree on the leader, no need to vote
-      if (this._leadershipState === LeadershipState.Known && this._leader === remoteLeader) {
-        this.dbg(`local leader ${this._leader} matches remote leader`)
-        return
-      }
+    // Check if we were waiting to hear from another peer to find out who the
+    // leader is and we've now discovered
+    if (this._leadershipState === LeadershipState.Discovery && remoteLeader) {
+      this.dbg(`discovered leader is ${remoteLeader}`)
+      this._setLeader(remoteLeader)
+    }
 
-      // We were waiting to hear from another node to find out who the leader is
-      if (this._leadershipState === LeadershipState.Discovery) {
-        this.dbg(`discovered leader is ${remoteLeader}`)
-        this._setLeader(remoteLeader)
-        return
-      }
-
-      // We think the leader is different from what the remote thinks so we
-      // need to vote
-      this._leadershipState = LeadershipState.Voting
-
-      // This is just a membership summary hash, so wait for a message with
-      // the full membership state
-      if (typeof remoteMembership === 'string') {
-        this.dbg(`remote leader is ${remoteLeader} - no remote membership, ignoring gossip message`)
-        return
-      }
-    } else if (this._leadershipState === LeadershipState.Known && remoteEpochVotersState) {
+    if (this._leadershipState === LeadershipState.Known && !remoteLeader && remoteEpochVotersState) {
       // If we have finished voting but someone else hasn't, make sure we
       // broadcast the voting information in our next gossip message
       this._someoneNeedsToKnowVotes = true
     }
 
+    // If this is a summary message, it doesn't include membership or voting
+    // information so there's nothing more to do
+    if (!remoteMembership || typeof remoteMembership === 'string') {
+      this.dbg(`no remote membership state or votes received, taking no further action`)
+      return
+    }
+
+    // If the remote has not sent us voting information
     if (!remoteEpochVotersState) {
-      // If we have a leader and the remote has not sent us a CRDT of votes
-      // then there's no election going on
+      // If we have a leader and there are no new votes, nothing more to do
       if (this._leadershipState === LeadershipState.Known) {
         this.dbg(`leader known and no votes received`)
         return
@@ -141,27 +140,40 @@ module.exports = class Leadership extends EventEmitter {
       // If there are remote membership changes the local node didn't know
       // about, and there's no remote vote CRDT, that means a membership change
       // happened while voting was in progress, so move to a new voting epoch
-      if (!remoteMembership || typeof remoteMembership === 'string') {
-        this.dbg(`no remote membership state, ignoring gossip message`)
-        return
-      }
       const localNeedsUpdate = !membershipUtil.firstSubsumesSecond(localMembership, remoteMembership)
       if (localNeedsUpdate) {
         this.dbg(`membership changes occurred while voting was in progress`)
-        this._voteNewEpoch()
+        return this._voteNewEpoch()
       }
+
+      this.dbg(`no votes received and no membership changes, no further action taken`)
       return
     }
 
+    // Save the local and remote epoch voters value before merging
+    const localValueBefore = this._epochVoters.value()
     const remoteEpochVoters = EpochVoters('tmp')
     remoteEpochVoters.apply(remoteEpochVotersState)
+    const remoteValueBefore = remoteEpochVoters.value()
+
+    // Merge in the remote votes with local votes
+    this._epochVoters.apply(remoteEpochVotersState)
+
+    // Check if any votes have changed
+    if (Voting.epochVotersIdentical(localValueBefore, this._epochVoters.value())) {
+      this.dbg(`no change in votes - ignoring`)
+      return
+    }
+
+    // Something has changed, so clear the tick timer
+    this._tickTimer.clearTimers()
 
     // If the local node has membership changes the remote doesn't have, but the
     // local node's epoch number is lower, something is out of sync so move to
     // a new voting epoch
+    const localEpoch = localValueBefore[0]
+    const remoteEpoch = remoteValueBefore[0]
     const remoteNeedsUpdate = !membershipUtil.firstSubsumesSecond(remoteMembership, localMembership)
-    const localEpoch = this._epochVoters.value()[0]
-    const remoteEpoch = remoteEpochVoters.value()[0]
     if (remoteNeedsUpdate && localEpoch < remoteEpoch) {
       this.dbg(`remote epoch is higher but remote does not have local changes`)
       return this._voteNewEpoch()
@@ -181,19 +193,6 @@ module.exports = class Leadership extends EventEmitter {
       this._setStateVoting()
     }
 
-    // Merge in the remote votes with local votes
-    const before = this._epochVoters.value()
-    this._epochVoters.apply(remoteEpochVotersState)
-
-    // Check if any votes have changed
-    if (Voting.epochVotersIdentical(before, this._epochVoters.value())) {
-      this.dbg(`no change in votes - ignoring`)
-      return
-    }
-
-    // Something has changed, so clear the tick timer
-    this._tickTimer.clearTimers()
-
     // Vote for a candidate
     Voting.vote(this._epochVoters, this._peerId)
 
@@ -204,6 +203,16 @@ module.exports = class Leadership extends EventEmitter {
     const members = membershipUtil.crdtWithState(localMembership)
     members.apply(remoteMembership)
     const memberCount = Object.keys(members.value()).length
+
+    // If a majority of peers have voted for the leader, the vote is complete
+    if (leaderSoFar && leaderSoFar.votes > memberCount / 2) {
+      this.dbg(`leader elected with ${leaderSoFar.votes} votes - ${leaderSoFar.leader}`)
+      this._setLeader(leaderSoFar.leader)
+      return
+    }
+
+    // Make sure we're in the voting state
+    this._setStateVoting()
 
     // If there is a tie so far
     if (leaderSoFar === null) {
@@ -218,13 +227,6 @@ module.exports = class Leadership extends EventEmitter {
       // Otherwise wait for new votes to come in, if none arrive then vote for self
       this.dbg(`tied so far, waiting for more votes`)
       return this._waitForVotesThenVoteForSelf()
-    }
-
-    // If a majority of peers have voted for the leader, the vote is complete
-    if (leaderSoFar.votes > memberCount / 2) {
-      this.dbg(`leader elected with ${leaderSoFar.votes} votes - ${leaderSoFar.leader}`)
-      this._setLeader(leaderSoFar.leader)
-      return
     }
 
     // Otherwise wait for new votes to come in, if none arrive then vote for self
@@ -250,6 +252,11 @@ module.exports = class Leadership extends EventEmitter {
   }
 
   _setLeader (peerId) {
+    // Minimize gossip messages - if we were able to find out who the leader
+    // is, everyone else should soon find out too. If not they will request
+    // a gossip message
+    this._someoneNeedsToKnowVotes = false
+
     this._backoffMaxTicks = 1
     this._tickTimer.clearTimers()
     if (this._leader !== peerId || this._leadershipState !== LeadershipState.Known) {
@@ -269,16 +276,19 @@ module.exports = class Leadership extends EventEmitter {
   // Wait a few ticks to see if we hear from another peer
   // If not then vote in a new epoch
   async _backOffThenVoteNewEpoch () {
-    // The first time the timer should resolve immediately (without
-    // waiting for a tick)
+    // The number of ticks will be between 0 and this._backoffMaxTicks
+    // The first time this._backoffMaxTicks is 1, so the timer
+    // should resolve immediately (without waiting for a tick)
     const ticks = Math.floor(Math.random() * this._backoffMaxTicks)
+    const realMax = this._backoffMaxTicks - 1
+    this.dbg(`backing off ${ticks} (max ${realMax}) ticks before voting for self in new epoch`)
+
     // Exponentially increase the back off time period
     // (this gets reset to 1 when a leader is elected)
     this._backoffMaxTicks *= 2
-    this.dbg(`backing off ${ticks} ticks before voting for self in new epoch`)
     const timerCompleted = await this._tickTimer.waitForTicks('backoff', ticks)
     if (timerCompleted) {
-      // Timer completed without being clearled so vote in new epoch
+      // Timer completed without being cleared so vote in new epoch
       this.dbg(`didnt hear from another peer after ${ticks} ticks`)
       this._voteNewEpoch()
     }
@@ -289,7 +299,7 @@ module.exports = class Leadership extends EventEmitter {
     const ticks = this._options.leadershipElectionGossipNowMaxCount
     const timerCompleted = await this._tickTimer.waitForTicks('vote-self', ticks)
     if (!timerCompleted) {
-      // Timer was clearled
+      // Timer was cleared
       return
     }
 
@@ -308,3 +318,7 @@ module.exports = class Leadership extends EventEmitter {
     }
   }
 }
+
+Leadership.LeadershipState = LeadershipState
+
+module.exports = Leadership

@@ -77,6 +77,7 @@ module.exports = class Membership extends EventEmitter {
       this._peerId = pInfo.id.toB58String()
       this._memberCRDT = ORMap(this._peerId)
       this._ensureSelfIsInMembershipCRDT()
+      this._someoneHasMembershipWrong = true
       this._diasSet = DiasSet(
         this._options.peerIdByteCount, this._ipfs._peerInfo, this._options.preambleByteCount)
       await this.connectionManager.start(this._diasSet)
@@ -132,7 +133,6 @@ module.exports = class Membership extends EventEmitter {
   }
 
   needsUrgentBroadcast () {
-    // return this._someoneHasMembershipWrong || this.pluginManager.needsUrgentBroadcast()
     return this._someoneHasMembershipWrong || this.leadership.needsUrgentBroadcast()
   }
 
@@ -207,8 +207,6 @@ module.exports = class Membership extends EventEmitter {
       this._membershipTopic(),
       this._createMembershipSummaryHash(),
       this._collaboration.typeName]
-    // const pluginGossip = this.pluginManager.getGossipMessage(false)
-    // return encode(message.concat(pluginGossip))
     const leadershipGossip = this.leadership.getGossipMessage(false)
     return encode(message.concat(leadershipGossip))
   }
@@ -228,8 +226,6 @@ module.exports = class Membership extends EventEmitter {
   _createMembershipMessage () {
     debug('sending membership', this._memberCRDT.value())
     const message = [this._membershipTopic(), this._memberCRDT.state(), this._collaboration.typeName]
-    // const pluginGossip = this.pluginManager.getGossipMessage(true)
-    // return encode(message.concat(pluginGossip))
     const leadershipGossip = this.leadership.getGossipMessage(true)
     // TODO: sign and encrypt membership message
     return encode(message.concat(leadershipGossip))
