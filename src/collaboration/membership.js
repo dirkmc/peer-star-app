@@ -21,7 +21,7 @@ module.exports = class Membership extends EventEmitter {
     this._ipfs = ipfs
     this._app = app
     this._collaboration = collaboration
-    this._options = options
+    this._options = options || {}
 
     this._members = new Map()
     const gfh = this._options.gossipFrequencyHeuristic || new MembershipGossipFrequencyHeuristic(app, this, options)
