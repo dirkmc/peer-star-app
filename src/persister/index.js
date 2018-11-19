@@ -133,6 +133,13 @@ class CollaborationPersister extends EventEmitter {
   }
 
   async stop () {
+    if (this._stopping) {
+      return this._stopping
+    }
+    this._stopping = this._stopping()
+  }
+
+  async _stopping () {
     this._store.removeListener('delta', this._onDelta)
     this._persistenceHeuristic.stop()
     this._publishQueue.clear()
