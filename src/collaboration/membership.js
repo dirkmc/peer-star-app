@@ -43,6 +43,9 @@ module.exports = class Membership extends EventEmitter {
 
     this.connectionManager.on('should evict', (peerInfo) => {
       const peerId = peerInfo.id.toB58String()
+      if (!this._members.has(peerId)) {
+        return
+      }
       console.log('%s: evicting %s', this._peerId, peerId)
       this._memberCRDT.remove(peerId)
       this._members.delete(peerId)

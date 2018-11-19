@@ -99,7 +99,7 @@ class Leadership extends EventEmitter {
   _onPeerLeft (peerId) {
     // If the evicted peer was the leader, vote for a new leader
     if (this._leader === peerId) {
-      this.dbg('leader %s was evicted, voting in new epoch', this._leader)
+      this.dbg(`leader ${this._leader} was evicted, voting in new epoch`)
       this._voteNewEpoch()
     }
   }
