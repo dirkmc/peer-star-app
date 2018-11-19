@@ -22,7 +22,7 @@ const LeadershipState = {
 const defaultOptions = {
   // After this many 'gossip now' events without a response, this peer will
   // assume it is the leader
-  leadershipElectionGossipNowMaxCount: 20
+  leadershipElectionGossipNowMaxCount: 30
 }
 
 class Leadership extends EventEmitter {
@@ -122,11 +122,21 @@ class Leadership extends EventEmitter {
       this._setLeader(remoteLeader)
     }
 
-    if (this._leadershipState === LeadershipState.Known && !remoteLeader && remoteEpochVotersState) {
+    if (this._leadershipState === LeadershipState.Known) {
       // If we have finished voting but someone else hasn't, make sure we
       // broadcast the voting information in our next gossip message
-      this.dbg(`local knows leader but remote does not, make sure we send voting state on next tick`)
-      this._someoneNeedsToKnowVotes = true
+      if(!remoteLeader && remoteEpochVotersState) {
+        this.dbg(`local knows leader but remote does not, make sure we send voting state on next tick`)
+        this._someoneNeedsToKnowVotes = true
+      }
+      // If we think the leader is different from the remote, make sure we
+      // broadcast the voting information in our next gossip message
+      if (remoteLeader && this._leader && this._leader !== remoteLeader) {
+        let msg = `local leader ${this._leader} does not match remote leader ${remoteLeader}, `
+        msg+= `make sure we send voting state on next tick`
+        this.dbg(msg)
+        this._someoneNeedsToKnowVotes = true
+      }
     }
 
     // If this is a summary message, it doesn't include membership or voting

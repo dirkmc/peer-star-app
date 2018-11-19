@@ -177,10 +177,15 @@ class Collaboration extends EventEmitter {
     this.stats.start()
     this._unregisterObserver = this._membership.connectionManager.observe(this.stats.observer)
 
-    this._leadershipPersister.on('started', this._onPersistenceStarted)
-    this._leadershipPersister.on('stopped', this._onPersistenceStopped)
+    this._leadershipPersister.on('persistence started', this._onPersistenceStarted)
+    this._leadershipPersister.on('persistence stopped', this._onPersistenceStopped)
 
     await Array.from(this._subs.values()).map((sub) => sub.start())
+
+    if (this._isRoot) {
+      this._leadershipPersister.start()
+    }
+
     this.emit('started', id)
   }
 
