@@ -128,7 +128,8 @@ class MockNetwork {
     const options = Object.assign({
       peerIdByteCount: 32,
       preambleByteCount: 2,
-      keys: {}
+      keys: {},
+      leadershipEnabled: true
     }, opts)
     const replication = {}
 

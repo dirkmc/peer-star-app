@@ -18,7 +18,8 @@ const options = {
   preambleByteCount: 2,
   peerIdByteCount: 32,
   nodeRadius: 10,
-  paddingY: 20
+  paddingY: 20,
+  leadershipEnabled: true
 }
 
 function localStorageKey(name) {

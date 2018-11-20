@@ -83,9 +83,11 @@ class Collaboration extends EventEmitter {
       globalConnectionManager,
       this._options.stats)
 
-    this._leadershipPersister = new LeadershipPersister(this, this._membership, ipfs, name, this._type, this._store, options)
-    this._onPersistenceStarted = this._onPersistenceStarted.bind(this)
-    this._onPersistenceStopped = this._onPersistenceStopped.bind(this)
+    if (this._options.leadershipEnabled) {
+      this._leadershipPersister = new LeadershipPersister(this, this._membership, ipfs, name, this._type, this._store, options)
+      this._onPersistenceStarted = this._onPersistenceStarted.bind(this)
+      this._onPersistenceStopped = this._onPersistenceStopped.bind(this)
+    }
 
     this.stats.on('error', (err) => {
       console.error('error in stats:', err)
@@ -177,12 +179,11 @@ class Collaboration extends EventEmitter {
     this.stats.start()
     this._unregisterObserver = this._membership.connectionManager.observe(this.stats.observer)
 
-    this._leadershipPersister.on('persistence started', this._onPersistenceStarted)
-    this._leadershipPersister.on('persistence stopped', this._onPersistenceStopped)
-
     await Array.from(this._subs.values()).map((sub) => sub.start())
 
-    if (this._isRoot) {
+    if (this._isRoot && this._leadershipPersister) {
+      this._leadershipPersister.on('persistence started', this._onPersistenceStarted)
+      this._leadershipPersister.on('persistence stopped', this._onPersistenceStopped)
       this._leadershipPersister.start()
     }
 
@@ -233,16 +234,16 @@ class Collaboration extends EventEmitter {
       }
     }
 
-    if (this._isRoot) {
+    if (this._isRoot && this._leadershipPersister) {
+      this._leadershipPersister.removeListener('started', this._onPersistenceStarted)
+      this._leadershipPersister.removeListener('stopped', this._onPersistenceStopped)
+
       try {
         await this._leadershipPersister.stop()
       } catch (err) {
         console.error('error stopping:', err)
       }
     }
-
-    this._leadershipPersister.removeListener('started', this._onPersistenceStarted)
-    this._leadershipPersister.removeListener('stopped', this._onPersistenceStopped)
 
     this.emit('stopped')
   }
