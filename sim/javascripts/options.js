@@ -11,7 +11,7 @@ const OptionDefaults = {
   avgNetworkDelay: 400,
   avgPeerStartTime: 500,
   initialPeerCount: 1,
-  leadershipElectionGossipNowMaxCount: 3
+  leadershipMaxIdleTickCount: 3
 }
 // Not configurable
 const options = {

@@ -54,7 +54,7 @@ module.exports = class Membership extends EventEmitter {
     })
 
     if (this._options.leadershipEnabled) {
-      this.leadership = new Leadership(this, this._membershipGossipFrequencyHeuristic, this._options)
+      this.leadership = new Leadership(this, this._options)
     }
 
     this.running = false

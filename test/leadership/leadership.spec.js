@@ -17,15 +17,6 @@ function randomB58String () {
   return new FakePeerInfo(randomPeerId()).id.toB58String()
 }
 
-const mock = {
-  gossipFrequencyHeuristic () {
-    const gfh = new EventEmitter()
-    gfh.start = () => {}
-    gfh.stop = () => {}
-    return gfh
-  }
-}
-
 function generateGossipMessage (voteForPeerId) {
   const peerId = randomB58String()
   const membership = ORMap(peerId)
@@ -87,25 +78,34 @@ function expectKnownState (leadership, peerId) {
   expect(leadership.getGossipMessage(true)).to.deep.equal({ leader: peerId })
 }
 
+const mock = {
+  ticker () {
+    const e = new EventEmitter()
+    e.start = () => {}
+    e.stop = () => {}
+    return e
+  }
+}
+
 describe('leadership', function () {
   const leaderships = []
-  function createLeadership (options, gossipFrequencyHeuristic) {
-    const gfh = gossipFrequencyHeuristic || mock.gossipFrequencyHeuristic()
+  function createLeadership (options) {
     const membership = new EventEmitter()
     membership.peerCount = () => 1
-    const leadership = new Leadership(membership, gfh, options)
+    const leadership = new Leadership(membership, options)
     leaderships.push(leadership)
     return leadership
   }
 
   async function getStartedLeadershipWithSelfAsLeader () {
-    const gfh = mock.gossipFrequencyHeuristic()
+    const ticker = mock.ticker()
     const leadership = createLeadership({
-      leadershipElectionGossipNowMaxCount: 1
-    }, gfh)
+      leadershipMaxIdleTickCount: 1,
+      leadershipTicker: ticker
+    })
     const peerId = randomB58String()
     leadership.start(peerId)
-    gfh.emit('gossip now')
+    ticker.emit('tick')
     await new Promise(resolve => setTimeout(resolve))
 
     const epochVoters = EpochVoters(peerId)
@@ -161,15 +161,16 @@ describe('leadership', function () {
     })
 
     it('should elect self as leader if no gossip messages are received', async () => {
-      const gfh = mock.gossipFrequencyHeuristic()
+      const ticker = mock.ticker()
       const leadership = createLeadership({
-        leadershipElectionGossipNowMaxCount: 3
-      }, gfh)
+        leadershipMaxIdleTickCount: 3,
+        leadershipTicker: ticker
+      })
       const peerId = randomB58String()
       leadership.start(peerId)
-      gfh.emit('gossip now')
-      gfh.emit('gossip now')
-      gfh.emit('gossip now')
+      ticker.emit('tick')
+      ticker.emit('tick')
+      ticker.emit('tick')
       await new Promise(resolve => setTimeout(resolve))
 
       expectKnownState(leadership, peerId)
@@ -467,19 +468,20 @@ describe('leadership', function () {
     })
 
     it('If there is a tie, should wait for votes then elect self repeating with exponential back off', async () => {
-      const leadershipElectionGossipNowMaxCount = 10
-      const gfh = mock.gossipFrequencyHeuristic()
+      const leadershipMaxIdleTickCount = 10
+      const ticker = mock.ticker()
       const leadership = createLeadership({
-        leadershipElectionGossipNowMaxCount
-      }, gfh)
+        leadershipMaxIdleTickCount,
+        leadershipTicker: ticker
+      })
       const peerId = randomB58String()
       const localMembership = ORMap(peerId)
       localMembership.applySub(peerId, 'mvreg', 'write', [])
 
       // Wait for start up
       leadership.start(peerId)
-      for (let i = 0; i < leadershipElectionGossipNowMaxCount; i++) {
-        gfh.emit('gossip now')
+      for (let i = 0; i < leadershipMaxIdleTickCount; i++) {
+        ticker.emit('tick')
       }
       await new Promise(resolve => setTimeout(resolve))
 
@@ -522,10 +524,10 @@ describe('leadership', function () {
         mergedEpochVoters = mergeEpochVoters(epochVoters, remotePeer.epochVoters)
         expectVotingState(leadership, mergedEpochVoters.state())
 
-        // Emit enough gossip now events such that local peer stops waiting
+        // Emit enough tick events such that local peer stops waiting
         // and votes for itself in a new epoch
         for (let i = 0; i < maxTickCount; i++) {
-          gfh.emit('gossip now')
+          ticker.emit('tick')
         }
         await new Promise(resolve => setTimeout(resolve))
 
@@ -572,11 +574,12 @@ describe('leadership', function () {
     })
 
     it('If there are not enough votes, should wait for votes then elect self', async () => {
-      const leadershipElectionGossipNowMaxCount = 3
-      const gfh = mock.gossipFrequencyHeuristic()
+      const leadershipMaxIdleTickCount = 3
+      const ticker = mock.ticker()
       const leadership = createLeadership({
-        leadershipElectionGossipNowMaxCount
-      }, gfh)
+        leadershipMaxIdleTickCount,
+        leadershipTicker: ticker
+      })
 
       const peerId = randomB58String()
       const localMembership = ORMap(peerId)
@@ -584,8 +587,8 @@ describe('leadership', function () {
 
       // Wait for start up
       leadership.start(peerId)
-      for (let i = 0; i < leadershipElectionGossipNowMaxCount; i++) {
-        gfh.emit('gossip now')
+      for (let i = 0; i < leadershipMaxIdleTickCount; i++) {
+        ticker.emit('tick')
       }
       await new Promise(resolve => setTimeout(resolve))
 
@@ -615,9 +618,9 @@ describe('leadership', function () {
 
       // Expect to wait enough ticks until the tick timer triggers and the local
       // peer votes in a new epoch
-      for (let i = 0; i < leadershipElectionGossipNowMaxCount; i++) {
+      for (let i = 0; i < leadershipMaxIdleTickCount; i++) {
         expectVotingState(leadership, mergedEpochVoters.state())
-        gfh.emit('gossip now')
+        ticker.emit('tick')
         await new Promise(resolve => setTimeout(resolve))
       }
 

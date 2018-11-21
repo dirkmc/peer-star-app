@@ -13,6 +13,7 @@ const Leadership = require('../../src/leadership')
 const LeadershipState = Leadership.LeadershipState
 const Membership = require('../../src/collaboration/membership')
 const Multiaddr = require('multiaddr')
+const Ticker = require('../../src/common/ticker')
 
 const mock = {
   ipfs () {
@@ -28,6 +29,9 @@ const mock = {
     cm.start = () => {}
     cm.stop = () => {}
     return cm
+  },
+  ticker (interval) {
+    return new Ticker({ interval })
   }
 }
 
@@ -94,10 +98,10 @@ class MockNetwork {
     const counts = {}
     for (const mi of this.memberships) {
       const leaderId = mi.leadership.getLeader()
-      counts[leaderId] = (counts[leaderId] || 0) + 1
+      counts[leaderId || ''] = (counts[leaderId] || 0) + 1
     }
     const keys = Object.keys(counts)
-    return keys.length === 1 && !!counts[keys[0]]
+    return keys.length === 1 && !!keys[0]
   }
 
   async createMembership (opts) {
@@ -137,7 +141,8 @@ class MockNetwork {
     ipfs._peerInfo.multiaddrs.add(Multiaddr(`/ip4/127.0.0.1/tcp/${memberIndex}`))
 
     const mOpts = Object.assign(options, {
-      connectionManager: mock.connectionManager()
+      connectionManager: mock.connectionManager(),
+      leadershipTicker: mock.ticker(10)
     })
     const membership = new Membership(ipfs, null, app, collaboration, store, clocks, replication, mOpts)
     this.memberships.push(membership)
@@ -152,7 +157,7 @@ describe('leadership convergence', function () {
 
   let currentNetwork
   const opts = {
-    leadershipElectionGossipNowMaxCount: 5,
+    leadershipMaxIdleTickCount: 5,
     samplingIntervalMS: 10,
     targetGlobalMembershipGossipFrequencyMS: 10,
     AvgNetworkDelay: 1

@@ -8,6 +8,7 @@ const EpochVoters = CRDT('epochvoters')
 const Voting = require('./voting')
 const membershipUtil = require('../common/membership-util')
 const TickTimer = require('../common/tick-timer')
+const Ticker = require('../common/ticker')
 const Options = require('../common/options')
 
 const LeadershipState = {
@@ -20,17 +21,16 @@ const LeadershipState = {
 }
 
 const defaultOptions = {
-  // After this many 'gossip now' events without a response, this peer will
+  // After this many 'tick' events without a response, this peer will
   // assume it is the leader
-  leadershipElectionGossipNowMaxCount: 30
+  leadershipMaxIdleTickCount: 30
 }
 
 class Leadership extends EventEmitter {
-  constructor (membership, gossipFrequencyHeuristic, options) {
+  constructor (membership, options) {
     super()
 
     this._membership = membership
-    this._gossipFrequencyHeuristic = gossipFrequencyHeuristic
     this._options = Options.merge(defaultOptions, options)
 
     this._leader = undefined
@@ -38,9 +38,10 @@ class Leadership extends EventEmitter {
     this._leadershipState = LeadershipState.Discovery
 
     this._backoffMaxTicks = 1
+    this._ticker = this._options.leadershipTicker || new Ticker()
     this._tickTimer = new TickTimer()
 
-    this._gossipNow = this._gossipNow.bind(this)
+    this._onTick = this._onTick.bind(this)
     this._onPeerLeft = this._onPeerLeft.bind(this)
 
     this._running = false
@@ -56,8 +57,9 @@ class Leadership extends EventEmitter {
   }
 
   start (peerId) {
-    this._peerId = peerId    
-    this._gossipFrequencyHeuristic.on('gossip now', this._gossipNow)
+    this._peerId = peerId
+    this._ticker.on('tick', this._onTick)
+    this._ticker.start()
     this._membership.on('peer left', this._onPeerLeft)
     this._epochVoters = EpochVoters(this._peerId)
     this._waitForVotesThenVoteForSelf()
@@ -69,8 +71,9 @@ class Leadership extends EventEmitter {
     if (!this._running) {
       return
     }
-    this._gossipFrequencyHeuristic.removeListener('gossip now', this._gossipNow)
     this._membership.removeListener('peer left', this._onPeerLeft)
+    this._ticker.removeListener('tick', this._onTick)
+    this._ticker.stop()
     this._tickTimer.clearTimers()
     this._running = false
     this.dbg('stopped')
@@ -293,7 +296,7 @@ class Leadership extends EventEmitter {
     }
   }
 
-  _gossipNow () {
+  _onTick () {
     this._tickTimer.tick()
   }
 
@@ -320,7 +323,7 @@ class Leadership extends EventEmitter {
 
   async _waitForVotesThenVoteForSelf () {
     // Wait for a while to see if we hear from another peer
-    const ticks = this._options.leadershipElectionGossipNowMaxCount
+    const ticks = this._options.leadershipMaxIdleTickCount
     const timerCompleted = await this._tickTimer.waitForTicks('vote-self', ticks)
     if (!timerCompleted) {
       // Timer was cleared
