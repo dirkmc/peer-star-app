@@ -86,12 +86,13 @@ class AppPinner extends EventEmitter {
     if (message.from === peerInfo.id) {
       return
     }
-    let decoded, collaborationName, membership, type
+    let decoded, collaborationName, type
     try {
       decoded = decode(message.data)
-      [collaborationName, membership, type] = decoded
+      collaborationName = decoded[0]
+      type = decoded[2]
     } catch (err) {
-      console.log('error parsing gossip message:', err)
+      console.warn('error parsing gossip message:', err)
       return
     }
 
@@ -100,11 +101,14 @@ class AppPinner extends EventEmitter {
       collaboration = this._collaborations.get(collaborationName)
     } else {
       debug('new collaboration %s of type %s', collaborationName, type)
-      if (type) {
-        collaboration = this._addCollaboration(collaborationName, type)
-        await collaboration.start()
-        this.emit('collaboration started', collaboration)
+      if (!type) {
+        console.warn('gossip message received with no CRDT type:', decoded)
+        return
       }
+
+      collaboration = this._addCollaboration(collaborationName, type)
+      await collaboration.start()
+      this.emit('collaboration started', collaboration)
     }
     collaboration.deliverGossipMessage(decoded).catch((err) => {
       console.error('error delivering remote membership:', err)
