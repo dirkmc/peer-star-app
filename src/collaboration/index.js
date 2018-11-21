@@ -11,6 +11,7 @@ const Clocks = require('./clocks')
 const Replication = require('./replication')
 const deriveCreateCipherFromKeys = require('../keys/derive-cipher-from-keys')
 const Stats = require('../stats')
+const LeadershipPersister = require('../leadership/persister')
 
 const defaultOptions = {
   preambleByteCount: 2,
@@ -81,6 +82,12 @@ class Collaboration extends EventEmitter {
       this._membership,
       globalConnectionManager,
       this._options.stats)
+
+    if (this._options.leadershipEnabled) {
+      this._leadershipPersister = new LeadershipPersister(this, this._membership, ipfs, name, this._type, this._store, options)
+      this._onPersistenceStarted = this._onPersistenceStarted.bind(this)
+      this._onPersistenceStopped = this._onPersistenceStopped.bind(this)
+    }
 
     this.stats.on('error', (err) => {
       console.error('error in stats:', err)
@@ -173,6 +180,22 @@ class Collaboration extends EventEmitter {
     this._unregisterObserver = this._membership.connectionManager.observe(this.stats.observer)
 
     await Array.from(this._subs.values()).map((sub) => sub.start())
+
+    if (this._isRoot && this._leadershipPersister) {
+      this._leadershipPersister.on('persistence started', this._onPersistenceStarted)
+      this._leadershipPersister.on('persistence stopped', this._onPersistenceStopped)
+      this._leadershipPersister.start()
+    }
+
+    this.emit('started', id)
+  }
+
+  _onPersistenceStarted () {
+    this.emit('persistence started')
+  }
+
+  _onPersistenceStopped () {
+    this.emit('persistence stopped')
   }
 
   async stop () {
@@ -211,6 +234,17 @@ class Collaboration extends EventEmitter {
       }
     }
 
+    if (this._isRoot && this._leadershipPersister) {
+      this._leadershipPersister.removeListener('started', this._onPersistenceStarted)
+      this._leadershipPersister.removeListener('stopped', this._onPersistenceStopped)
+
+      try {
+        await this._leadershipPersister.stop()
+      } catch (err) {
+        console.error('error stopping:', err)
+      }
+    }
+
     this.emit('stopped')
   }
 
@@ -234,8 +268,8 @@ class Collaboration extends EventEmitter {
     return this._membership.inboundConnectedPeers()
   }
 
-  deliverRemoteMembership (membership) {
-    return this._membership.deliverRemoteMembership(membership)
+  deliverGossipMessage (message) {
+    return this._membership.deliverGossipMessage(message)
   }
 
   _storeName () {

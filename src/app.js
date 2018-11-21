@@ -124,20 +124,18 @@ class App extends EventEmitter {
       if (message.from === peerInfo.id) {
         return
       }
-      let collaborationName, membership
       try {
-        [collaborationName, membership] = decode(message.data)
+        const decoded = decode(message.data)
+        const collaborationName = decoded[0]
+        if (this._collaborations.has(collaborationName)) {
+          const collaboration = this._collaborations.get(collaborationName)
+          collaboration.deliverGossipMessage(decoded)
+            .catch((err) => {
+              console.error('error delivering remote membership:', err)
+            })
+        }
       } catch (err) {
         console.log('error parsing gossip message:', err)
-        return
-      }
-
-      if (this._collaborations.has(collaborationName)) {
-        const collaboration = this._collaborations.get(collaborationName)
-        collaboration.deliverRemoteMembership(membership)
-          .catch((err) => {
-            console.error('error delivering remote membership:', err)
-          })
       }
     })
   }

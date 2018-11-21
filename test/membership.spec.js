@@ -100,6 +100,18 @@ describe('membership', function () {
       return m
     }
 
+    async function createStartedMembership (opts) {
+      const gfh = mock.gossipFrequencyHeuristic()
+      const o = Object.assign({}, {
+        gossipFrequencyHeuristic: gfh
+      }, opts)
+      const m = createMembership(o)
+      const starting = m.start()
+      gfh.emit('gossip now')
+      await starting
+      return m
+    }
+
     after(() => memberships.forEach(m => m.stop()))
 
     it('sends single gossip message on start even if multiple gossip now events are fired during start', async () => {
@@ -120,56 +132,50 @@ describe('membership', function () {
     })
 
     it('needs urgent broadcast on delivery of gossip summary message that doesnt match local hash', async () => {
-      const membership = createMembership()
-      await membership.start()
-      await membership.deliverRemoteMembership('remote hash')
+      const membership = await createStartedMembership()
+      await membership.deliverGossipMessage([null, 'remote hash', null])
       expect(membership.needsUrgentBroadcast()).to.equal(true)
     })
 
     it('does not need urgent broadcast on delivery of gossip summary message that matches local hash', async () => {
-      const membership = createMembership()
-      await membership.start()
+      const membership = await createStartedMembership()
       const matchingHash = membership._createMembershipSummaryHash()
-      await membership.deliverRemoteMembership(matchingHash)
+      await membership.deliverGossipMessage([null, matchingHash, null])
       expect(membership.needsUrgentBroadcast()).to.equal(false)
     })
 
     it('still needs urgent broadcast on delivery of hash mismatch followed by hash match', async () => {
-      const membership = createMembership()
-      await membership.start()
+      const membership = await createStartedMembership()
       const matchingHash = membership._createMembershipSummaryHash()
-      await membership.deliverRemoteMembership('remote hash')
+      await membership.deliverGossipMessage([null, 'remote hash', null])
       expect(membership.needsUrgentBroadcast()).to.equal(true)
-      await membership.deliverRemoteMembership(matchingHash)
+      await membership.deliverGossipMessage([null, matchingHash, null])
       expect(membership.needsUrgentBroadcast()).to.equal(true)
     })
 
     it('needs urgent broadcast on delivery of gossip message that doesnt contain this peer', async () => {
-      const membership = createMembership()
-      await membership.start()
+      const membership = await createStartedMembership()
       const tmpId = randomB58String()
       const remoteCrdt = ORMap(tmpId)
       remoteCrdt.applySub(tmpId, 'mvreg', 'write', [`/ip4/127.0.0.1/tcp/5001`])
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.needsUrgentBroadcast()).to.equal(true)
     })
 
     it('needs urgent broadcast on delivery of gossip message that contains this peer but has the wrong addresses', async () => {
-      const membership = createMembership()
-      await membership.start()
+      const membership = await createStartedMembership()
       const remoteCrdt = ORMap(randomB58String())
       remoteCrdt.applySub(membership._peerId, 'mvreg', 'write', [`/ip4/127.0.0.1/tcp/5001`])
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.needsUrgentBroadcast()).to.equal(true)
     })
 
     it('does not need urgent broadcast on delivery of gossip message that does contain this peer and addresses', async () => {
-      const membership = createMembership()
-      await membership.start()
+      const membership = await createStartedMembership()
       const remoteCrdt = ORMap(randomB58String())
       const addresses = membership._ipfs._peerInfo.multiaddrs.toArray().map((ma) => ma.toString())
       remoteCrdt.applySub(membership._peerId, 'mvreg', 'write', addresses)
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.needsUrgentBroadcast()).to.equal(false)
     })
 
@@ -182,8 +188,7 @@ describe('membership', function () {
         return remoteCrdt.state()
       }
 
-      const membership = createMembership()
-      await membership.start()
+      const membership = await createStartedMembership()
 
       const addresses = membership._ipfs._peerInfo.multiaddrs.toArray().map((ma) => ma.toString())
       const state1 = getRemoteState([
@@ -215,12 +220,12 @@ describe('membership', function () {
 
       // Remote membership contains existing peer id and addresses so there is
       // no need to broadcast
-      await membership.deliverRemoteMembership(state1)
+      await membership.deliverGossipMessage([null, state1, null])
       expect(membership.needsUrgentBroadcast()).to.equal(false)
 
       // Second state is the same as the first, just with peers and addresses
       // in a different order, should produce the identical hash
-      await membership.deliverRemoteMembership(state2)
+      await membership.deliverGossipMessage([null, state2, null])
       expect(membership.needsUrgentBroadcast()).to.equal(false)
     })
 
@@ -244,7 +249,7 @@ describe('membership', function () {
       let remoteAddresses = [`/ip4/127.0.0.1/tcp/5000`]
       remoteCrdt.applySub(remotePeerId, 'mvreg', 'write', remoteAddresses)
 
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.peerCount()).to.equal(2)
       expect(eventLogger.logs['peer joined']).to.deep.equal([[remotePeerId]])
       expect(eventLogger.logs['peer left'].length).to.equal(0)
@@ -258,7 +263,7 @@ describe('membership', function () {
       remoteCrdt.applySub(remotePeerId, 'mvreg', 'write', remoteAddresses)
 
       // Deliver remote CRDT with same peer but different addresses
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.peerCount()).to.equal(2)
       expect(eventLogger.logs['peer joined'].length).to.equal(0)
       expect(eventLogger.logs['peer left'].length).to.equal(0)
@@ -272,7 +277,7 @@ describe('membership', function () {
 
       // Deliver remote CRDT with remote peer removed
       remoteCrdt.remove(remotePeerId)
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.peerCount()).to.equal(1)
       expect(eventLogger.logs['peer joined'].length).to.equal(0)
       expect(eventLogger.logs['peer left'][0][0]).to.equal(remotePeerId)
@@ -299,7 +304,7 @@ describe('membership', function () {
       // Deliver remote CRDT with local peer removed
       // This should have no effect because the membership will restore it
       // after merging
-      await membership.deliverRemoteMembership(remoteCrdt.state())
+      await membership.deliverGossipMessage([null, remoteCrdt.state(), null])
       expect(membership.peerCount()).to.equal(1)
       expect(eventLogger.logs['peer joined'].length).to.equal(0)
       expect(eventLogger.logs['peer left'].length).to.equal(0)
@@ -349,7 +354,7 @@ describe('membership', function () {
             }
             for (let otherMembership of memberships) {
               if (otherMembership !== membership) {
-                otherMembership.deliverRemoteMembership(membershipMessage)
+                otherMembership.deliverGossipMessage([null, membershipMessage, null])
               }
             }
           }

@@ -10,14 +10,16 @@ const OptionDefaults = {
   // These are specific to the simulator
   avgNetworkDelay: 400,
   avgPeerStartTime: 500,
-  initialPeerCount: 1
+  initialPeerCount: 1,
+  leadershipMaxIdleTickCount: 3
 }
 // Not configurable
 const options = {
   preambleByteCount: 2,
   peerIdByteCount: 32,
   nodeRadius: 10,
-  paddingY: 20
+  paddingY: 20,
+  leadershipEnabled: true
 }
 
 function localStorageKey(name) {

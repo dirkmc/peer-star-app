@@ -66,9 +66,9 @@ async function init() {
   })
 
   let electionStart = Date.now()
-  network.on('leader removed', () => {
+  network.on('leader removed', p => {
     electionStart = Date.now()
-    infoBox.addMessage(null, 'Leader removed')
+    infoBox.addMessage(p, 'Leader removed', false)
   })
   network.on('leader elected', p => {
     const elapsed = (Date.now() - electionStart) / 1000

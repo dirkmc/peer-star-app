@@ -12,7 +12,7 @@ const AppTransport = require('./app-transport')
 const Relay = require('./ipfs-relay')
 
 module.exports = (app, options) => {
-  const ipfsOptions = {
+  const ipfsOptions = Object.assign(options, {
     repo: options && options.repo,
     EXPERIMENTAL: {
       pubsub: true
@@ -24,7 +24,7 @@ module.exports = (app, options) => {
       Bootstrap: options.bootstrap
     },
     libp2p: createLibp2p
-  }
+  })
 
   if (options.bootstrap) {
     ipfsOptions.config.Bootstrap = options.bootstrap
